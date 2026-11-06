@@ -1,0 +1,21 @@
+# 真实项目包：仓库公开，私有清单只在部署机上挂载，绝不进构建上下文
+manifests/local
+
+# 构建产物与本地运行日志
+**/bin
+**/obj
+**/logs
+
+# 测试、IDE、AI 工具、个人资料（镜像只依赖 src 与 manifests/demo）
+tests
+.vs
+.trae
+.screenshots
+.notes
+
+# git 元数据与文档
+.git
+.gitattributes
+.gitignore
+README.md
+deploy

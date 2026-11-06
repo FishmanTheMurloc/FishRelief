@@ -1,0 +1,28 @@
+# Build results
+bin/
+obj/
+
+# 运行日志（Serilog File sink）
+logs/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.cache
+
+# AI IDE
+.trae/
+
+# 项目包与注释参考稿（本地 only，仓库只跟踪 manifests/demo）
+/manifests/local
+# 部署用清单目录（私有清单，部署机本地维护，不入库）
+/deploy/manifests/
+# 导出的镜像 tar（离线传输用，不入库）
+/deploy/image/
+
+# 个人备忘
+/.notes/
+
+# 部署参数和密钥
+.env

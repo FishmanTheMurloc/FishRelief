@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>1416eb29-b31a-4598-9f5e-16569c7719c2</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+	<PackageReference Include="Serilog.AspNetCore" Version="8.0.3" />
+  </ItemGroup>
+	
+  <ItemGroup>
+    <ProjectReference Include="..\FishRelief.Kernel\FishRelief.Kernel.csproj" />
+  </ItemGroup>
+
+  <!-- 随构建/发布拷贝仓库内的 demo 清单 -->
+  <ItemGroup>
+    <None Include="..\..\manifests\demo\**\*" LinkBase="manifests\demo" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,30 @@
+# 纯运行时 compose：服务器上不需要源码，也不在本机构建
+# 用法：docker compose -f docker-compose.runtime.yml up -d
+# 镜像来源二选一：本机 docker save/load（默认 fish-relief-gateway:local）或 CI 的 GHCR 标签（用 FISH_RELIEF_IMAGE 覆盖）
+services:
+  gateway:
+    image: ${FISH_RELIEF_IMAGE:-fish-relief-gateway:local}
+    env_file: .env
+    ports:
+      # 宿主 5289 → 容器 8080；容器内监听端口由镜像 ASPNETCORE_HTTP_PORTS=8080 决定，健康检查仍在容器内 8080
+      - "5289:8080"
+    volumes:
+      # 运行日志与台账：logs/fish-relief-.log 与 logs/audit-.jsonl 都落在这里
+      - gateway-logs:/app/logs
+      # 清单目录只读挂载：挂整个 manifests（可并列多份清单，如 local/），模板按清单所在目录解析
+      # 容器内路径与 .env 里的 Manifest__Path=/manifests/local/manifest.json 对应
+      - ./manifests:/manifests:ro
+    restart: unless-stopped
+    # 与 ASP.NET Core 默认 30 秒优雅停机对齐，避免 compose 默认 10 秒提前 SIGKILL
+    stop_grace_period: 30s
+    healthcheck:
+      # 网关在清单、上游探测、模型校验全部通过后才监听端口，TCP 连通即等价于启动完成
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      # 覆盖上游模型探测（最长 10 秒）与冷启动
+      start_period: 60s
+
+volumes:
+  gateway-logs:

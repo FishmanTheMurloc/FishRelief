@@ -1,0 +1,205 @@
+{
+  "project": "demo",
+  "tasks": {
+    "dispatch": {
+      "availableModels": ["deepseek-flash"],
+      "firstUserMessage": "请为本次申请生成大肥鱼派发单",
+      "promptAssembly": {
+        "templateFile": "main.liquid"
+      },
+      "tools": [
+        {
+          "name": "CheckStock",
+          "description": "查询指定大肥鱼的当前库存。返回Remaining字段：大于0可预留，0表示当日配额已发完。",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "fishName": {
+                "type": "string",
+                "description": "大肥鱼名字，必须是派发名单中的名字"
+              }
+            },
+            "required": [
+              "fishName"
+            ]
+          }
+        },
+        {
+          "name": "ReserveFish",
+          "description": "为申领者预留一只大肥鱼，预留有效期30分钟，超时自动释放。返回ReservationId。",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "fishName": {
+                "type": "string",
+                "description": "大肥鱼名字"
+              },
+              "holder": {
+                "type": "string",
+                "description": "申领者昵称"
+              }
+            },
+            "required": [
+              "fishName",
+              "holder"
+            ]
+          }
+        },
+        {
+          "name": "Cancel",
+          "description": "释放之前预留的大肥鱼名额。预留已提交派发单后不可释放。",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "fishName": {
+                "type": "string",
+                "description": "大肥鱼名字"
+              }
+            },
+            "required": [
+              "fishName"
+            ]
+          }
+        },
+        {
+          "name": "SubmitTicket",
+          "description": "提交大肥鱼派发单，提交后预留即被核销，当日不可重复申领同一只大肥鱼。",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "fishName": {
+                "type": "string",
+                "description": "大肥鱼名字"
+              },
+              "holder": {
+                "type": "string",
+                "description": "申领者昵称"
+              },
+              "note": {
+                "type": "string",
+                "description": "备注：性格提示与系别相性福利"
+              }
+            },
+            "required": [
+              "fishName",
+              "holder",
+              "note"
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "rules": [
+    {
+      "name": "entities",
+      "strategy": "arrayKeys",
+      "required": true,
+      "jsonSchema": {
+        "description": "实体名单（必报）：字符串数组，1–12 条，每条 ≤128 字符",
+        "type": "array",
+        "items": { "type": "string", "maxLength": 128 },
+        "minItems": 1,
+        "maxItems": 12
+      },
+      "cases": [
+        {
+          "keys": ["电子大肥鱼"],
+          "liquidObject": {
+            "tags": [
+              "电子系"
+            ],
+            "description": "人气经典款，会发出哔哔的电流声，路过的人都会被电到心化。适合首次申领者。"
+          }
+        },
+        {
+          "keys": ["团子大肥鱼"],
+          "liquidObject": {
+            "tags": [
+              "软萌系"
+            ],
+            "description": "圆滚滚的抱枕体型，抱起来软软的，回血速度一流。适合加班人群。"
+          }
+        },
+        {
+          "keys": ["像素大肥鱼"],
+          "liquidObject": {
+            "tags": [
+              "电子系",
+              "稀有型"
+            ],
+            "description": "复古像素画风，数量稀少，是收藏家的心头好。配额有限，先到先得。"
+          }
+        },
+        {
+          "keys": ["泡泡大肥鱼"],
+          "liquidObject": {
+            "tags": [
+              "漂浮系",
+              "软萌系"
+            ],
+            "description": "会漂浮的小泡泡体型，轻轻一戳就会害羞地弹开。治愈系首选。"
+          }
+        },
+        {
+          "keys": ["学者大肥鱼"],
+          "liquidObject": {
+            "tags": [
+              "学者系"
+            ],
+            "description": "戴着小眼镜，说话慢条斯理，擅长把复杂问题讲明白。适合深究派。"
+          }
+        },
+        {
+          "keys": ["猫帽大肥鱼"],
+          "liquidObject": {
+            "tags": [
+              "漂浮系",
+              "稀有型"
+            ],
+            "description": "头顶一顶猫耳帽，慢悠悠地飘来飘去。稀有款，展示位待遇不同。"
+          }
+        }
+      ]
+    },
+    {
+      "name": "relations",
+      "strategy": "arrayKeys",
+      "required": false,
+      "jsonSchema": {
+        "description": "关联描述（可选）：字符串数组，0–16 条，每条 ≤128 字符",
+        "type": "array",
+        "items": { "type": "string", "maxLength": 128 },
+        "minItems": 0,
+        "maxItems": 16
+      },
+      "cases": [
+        {
+          "keys": ["软萌 × 电子", "电子 × 软萌"],
+          "liquidObject": {
+            "text": "反差萌加成：同时在场时额外附赠限量贴纸"
+          }
+        },
+        {
+          "keys": ["漂浮 × 稀有型", "稀有型 × 漂浮"],
+          "liquidObject": {
+            "text": "稀有浮动：展示缸升级为黄金展位"
+          }
+        }
+      ]
+    }
+  ],
+  "limits": {
+    "maxMessages": 300,
+    "maxBodyBytes": 1048576
+  },
+  "admission": {
+    "maxConcurrentGlobal": 16,
+    "waitSeconds": 5,
+    "maxWaiters": 32,
+    "retryAfterSeconds": 8
+  },
+  "endpoints": [
+    "/v1/chat/completions"
+  ]
+}

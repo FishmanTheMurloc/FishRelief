@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FishRelief Project Manifest",
+  "description": "项目包清单：网关与项目之间的数据契约。本文件是供清单作者与编辑器使用的契约参考（人工维护），客户端代码只是内容参照物；网关运行时以严格反序列化（拒绝未知字段）与 ManifestValidator 跨字段校验为准，不加载本文件。",
+  "type": "object",
+  "required": ["project", "tasks", "rules", "limits", "admission", "endpoints"],
+  "additionalProperties": false,
+  "properties": {
+    "project": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "description": "项目标识，不参与请求路由；网关仅在清单校验与 /debug/manifest 调试端点中使用。"
+    },
+    "rules": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/rule" },
+      "description": "规则定义表：每条规则自带一份 jsonSchema 约束其负载（arrayKeys 策略即 data[i].keys），并声明是否必报；是否必报与信封结构（data 是数组、每项有 name、name 唯一）由内核核验，不写进 schema。命中后为模板变量提供对象数组。"
+    },
+    "tasks": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[a-z][a-zA-Z0-9_-]*$", "description": "task id" },
+      "additionalProperties": { "$ref": "#/$defs/task" },
+      "description": "任务描述符集合，key 为 task id。task 由客户端在 system 消息的渲染信封里声明；首条 user 消息由网关覆写为 firstUserMessage。"
+    },
+    "limits": {
+      "type": "object",
+      "required": ["maxMessages", "maxBodyBytes"],
+      "additionalProperties": false,
+      "properties": {
+        "maxMessages": { "type": "integer", "minimum": 2, "description": "单请求 messages 数组长度上限。" },
+        "maxBodyBytes": { "type": "integer", "minimum": 1, "description": "请求 body 字节数上限。" }
+      }
+    },
+    "admission": {
+      "type": "object",
+      "required": ["maxConcurrentGlobal", "waitSeconds", "maxWaiters", "retryAfterSeconds"],
+      "additionalProperties": false,
+      "properties": {
+        "maxConcurrentGlobal": { "type": "integer", "minimum": 1, "description": "全局同时在飞的上游请求数上限，按上游能承接的路数定。" },
+        "waitSeconds": { "type": "integer", "minimum": 0, "description": "拿到名额前的最长等待秒数（有界等待，吸收瞬时争抢）。必须远小于客户端网络超时（例：某客户端为 10 分钟）。" },
+        "maxWaiters": { "type": "integer", "minimum": 0, "description": "同时在等待的请求数上限，超出立即拒绝，防止等待者本身耗尽内存。" },
+        "retryAfterSeconds": { "type": "integer", "minimum": 1, "description": "被拒时返回的 Retry-After 秒数（仅作建议，客户端不保证遵守）。实现上应加轻微抖动，避免重试脉冲同步。" }
+      },
+      "description": "准入策略：宁可拒绝也不排长队。并发超限或等待超时返回 429 并带 Retry-After。配额耗尽、拉黑尚未实现（二期预留），届时属不可重试、不产生 Retry-After。排队号、票据、队列状态端点一律不做（同步等待没有排队号的位置）。"
+    },
+    "endpoints": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^/v1/[a-z0-9/_-]+$" },
+      "minItems": 1,
+      "uniqueItems": true,
+      "description": "允许透传到上游的路径白名单（相对上游 base url）。不在表内的路径一律 404。"
+    }
+  },
+  "$defs": {
+    "task": {
+      "type": "object",
+      "required": ["availableModels", "firstUserMessage", "promptAssembly", "tools"],
+      "additionalProperties": false,
+      "properties": {
+        "availableModels": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$" },
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "本任务可用的模型名（上游真实模型名，直接发往上游）。客户端请求体 model 须落在此集内，越界即 400；清单中的模型名必须在上游模型清单中存在（启动时校验）。"
+        },
+        "firstUserMessage": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S",
+          "description": "首条 user 消息固定串，网关权威组装时直接使用。"
+        },
+        "promptAssembly": { "$ref": "#/$defs/promptAssembly" },
+        "tools": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/tool" },
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "本任务的工具权威定义集（含参数 schema）。客户端申报的每个工具名必须命中本集，网关按名重建声明（丢弃客户端描述与 schema）；客户端未申报的工具不会发给模型；历史 tool_calls 的 function.name 也必须 ∈ 本集。不同任务可有各自的集合。工具 name 在同一任务内必须唯一（由网关在启动时校验）。"
+        }
+      }
+    },
+    "promptAssembly": {
+      "type": "object",
+      "required": ["templateFile"],
+      "additionalProperties": false,
+      "properties": {
+        "templateFile": {
+          "type": "string",
+          "pattern": "^(?!/)(?![A-Za-z]:)(?!.*(^|/)\\.\\.(/|$)).*\\.liquid$",
+          "description": "Liquid 模板文件路径，相对于 manifest 所在目录；不得为绝对路径，也不得用 .. 越出目录。渲染结果即完整 system prompt。"
+        }
+      },
+      "description": "任务整体模板的渲染契约。模板可引用的数据（由内核提供）：每条 rules 规则产生一个对象数组，绑定到规则名（规则缺失时为空数组）；每个条目是 { term: 命中键, ...liquidObject }，可在 Liquid 中循环访问（如 {{ item.term }}）；格式化只使用 Liquid 内置过滤器。模板中不得出现客户端自定义文本。"
+    },
+    "rule": {
+      "type": "object",
+      "required": ["name", "strategy", "required", "jsonSchema", "cases"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z][a-zA-Z0-9]*$", "description": "规则名，采用 camelCase；同时是客户端渲染信封 data[].name 的取值与 Liquid 模板中的变量名。" },
+        "strategy": { "const": "arrayKeys", "description": "命中策略。当前只支持 arrayKeys：输入是字符串数组，逐元素做字面量匹配，输出对象数组。未来可扩展 keys/bert/arrayBert。" },
+        "required": { "type": "boolean", "description": "该规则是否必须在信封 data 中上报：true 时缺项直接 400；空数组合法与否由该规则 jsonSchema 的 minItems 决定。必报声明由内核在解析期核验，不写进 jsonSchema。" },
+        "jsonSchema": {
+          "type": "object",
+          "description": "该规则负载节点的普通 JSON Schema，只描述这一项负载（arrayKeys 即 data[i].keys），不涉及信封结构。受控关键词子集：根 type/items/minItems/maxItems/description，items 层 type/maxLength/description；arrayKeys 策略要求根 type=array、items.type=string、maxLength 与 maxItems 为正整数、minItems 非负且不大于 maxItems。禁止 oneOf/contains/properties/required 等结构约定。"
+        },
+        "cases": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/matchCase" },
+          "description": "命中分支表；同一规则内一个键最多只能出现在一个分支里。"
+        }
+      },
+      "description": "一条规则定义：name 对应信封 data[].name 与模板变量，strategy 决定输入/输出形状，required 声明是否必报，jsonSchema 只约束该项负载，cases 提供字面量词表。同一清单内规则 name 必须唯一（由网关在启动时校验）。"
+    },
+    "matchCase": {
+      "type": "object",
+      "required": ["keys", "liquidObject"],
+      "additionalProperties": false,
+      "properties": {
+        "keys": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1, "pattern": "\\S" },
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "该分支接受的字面量键：客户端上报的键必须与其中之一完全相等（不做任何模式匹配）。同一规则内一个键最多只能出现在一个分支里。命中后条目的 term 即该上报键。空白键、含控制字符的键，以及同一规则内跨分支重复的键，均由网关拒绝。"
+        },
+        "liquidObject": {
+          "type": "object",
+          "propertyNames": { "minLength": 1, "pattern": "\\S", "not": { "const": "term" } },
+          "additionalProperties": { "oneOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }] },
+          "description": "命中后并入 Liquid 对象（模板条目）的附加字段（值为字符串或字符串数组）。term 由内核按命中键自动注入，不能在此声明。"
+        }
+      },
+      "description": "命中分支：keys 说明何时命中，liquidObject 是命中后并入 Liquid 对象（模板条目）的字段。"
+    },
+    "tool": {
+      "type": "object",
+      "required": ["name", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$" },
+        "description": { "type": "string", "description": "工具描述，与客户端工具实现中的描述保持一致。" },
+        "parameters": {
+          "type": "object",
+          "description": "参数 JSON Schema（OpenAI function calling 的 parameters 字段），由客户端工具方法签名导出，二期用于 tool 参数实例校验。可省略；省略时网关不向上游转发该字段。"
+        }
+      }
+    }
+  }
+}
